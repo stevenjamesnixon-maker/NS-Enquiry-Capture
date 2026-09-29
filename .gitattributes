@@ -1,0 +1,5 @@
+# reference/ holds byte-identical copies of File Cabinet scripts owned by other
+# projects. They arrive with CRLF line endings and no final newline; git must
+# never normalise them, or the SHA-256 recorded in reference/README.md stops
+# matching.
+reference/*.js -text
