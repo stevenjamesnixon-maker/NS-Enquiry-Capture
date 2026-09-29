@@ -30,8 +30,8 @@ sha256sum reference/project_ue.js
 
 ## Why it is committed
 
-Reconnaissance and review only. The capture plug-in depends on one behaviour of this
-script: a Project created with `custrecord_proj_create_qr_pq` ticked makes its
+Reconnaissance and review only. The website Task processor depends on one behaviour
+of this script: a Project created with `custrecord_proj_create_qr_pq` ticked makes its
 `afterSubmit` raise the lead Opportunity and write the Opportunity's ID back to
 `custrecord_proj_lead_opp`. Having the source next to the notes makes that dependency
 checkable.
