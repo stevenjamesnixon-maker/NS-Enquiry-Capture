@@ -130,16 +130,32 @@ test('Plans: inside the Message, then Plans: None (no plans)', function () {
     assert.strictEqual(r.hasPlans, false);
 });
 
-test('Plans: with nothing after it (no plans)', function () {
+test('Plans: with nothing after it is unparseable', function () {
     var r = parse.parseNotes('GF entry: 9\nMessage: hi\n\nPlans:');
-    assert.strictEqual(r.ok, true);
+    assert.strictEqual(r.ok, false);
     assert.strictEqual(r.hasPlans, false);
+    assert.strictEqual(r.reason, 'Plans line not understood: Plans:');
 });
 
-test('numbered line with no URL (no plans)', function () {
+test('numbered line with no URL is unparseable', function () {
     var r = parse.parseNotes('GF entry: 9\nMessage: hi\n\nPlans:\n1. plan.pdf\n2.');
+    assert.strictEqual(r.ok, false);
+    assert.strictEqual(r.hasPlans, false);
+    assert.strictEqual(r.reason, 'Plans line not understood: 1. plan.pdf');
+});
+
+test('Plans: see attached is unparseable', function () {
+    var r = parse.parseNotes('GF entry: 9\nMessage: hi\n\nPlans: see attached');
+    assert.strictEqual(r.ok, false);
+    assert.strictEqual(r.hasPlans, false);
+    assert.strictEqual(r.reason, 'Plans line not understood: Plans: see attached');
+});
+
+test('Plans: none (lower case) means no plans', function () {
+    var r = parse.parseNotes('GF entry: 9\nMessage: hi\n\nPlans: none');
     assert.strictEqual(r.ok, true);
     assert.strictEqual(r.hasPlans, false);
+    assert.deepStrictEqual(r.planUrls, []);
 });
 
 test('missing GF entry: line is unparseable', function () {

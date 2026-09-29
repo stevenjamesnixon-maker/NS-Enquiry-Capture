@@ -25,9 +25,17 @@
  *
  * or the single line "Plans: None".
  *
- * DELIBERATE (D3): only an unambiguous plans block counts. A missing
- * "GF entry:" or "Plans:" line is unparseable and goes to a person; it is never
- * completed. A change to the feed template must never silently complete Tasks.
+ * DELIBERATE (D3): only an unambiguous plans block counts. After the LAST
+ * "Plans:" line:
+ *   - exactly "None" (any case) and nothing under it: no plans;
+ *   - a URL on the Plans: line and/or numbered URL lines, and nothing else: plans;
+ *   - "Plans: None" with URLs under it: unparseable;
+ *   - anything else ("Plans:" with nothing after it, "Plans: see attached", a
+ *     numbered line without a URL, any other line under the block): unparseable,
+ *     reason "Plans line not understood: <line>".
+ * A missing "GF entry:" or "Plans:" line is also unparseable. Unparseable goes to
+ * a person; it is never completed. A change to the feed template must never
+ * silently complete Tasks.
  */
 
 define([], function () {
@@ -175,25 +183,58 @@ define([], function () {
         var inline = RE_PLANS.exec(lines[plansIdx])[1].trim();
         result.plansLine = lines[plansIdx];
 
-        if (inline && (m = RE_PLAN_INLINE.exec(inline))) {
-            result.planUrls.push(m[1]);
-        }
+        // Every non-empty line under the block must be a numbered plan URL. The
+        // first that isn't is reported.
+        var badLine = '';
         for (i = plansIdx + 1; i < lines.length; i++) {
+            if (!lines[i]) {
+                continue;
+            }
             if ((m = RE_PLAN_LINE.exec(lines[i]))) {
                 result.planUrls.push(m[1]);
+            } else if (!badLine) {
+                badLine = lines[i];
             }
         }
 
-        // "Plans: None" with plan URLs under it contradicts itself. Doubt goes to
-        // a person (D2/D3), so it is unparseable rather than either answer.
-        if (RE_NONE.test(inline) && result.planUrls.length) {
-            result.planUrls = [];
-            result.reason = 'Notes say Plans: None but list plan URLs';
+        if (RE_NONE.test(inline)) {
+            // "Plans: None" with plan URLs under it contradicts itself. Doubt goes
+            // to a person (D2/D3), so it is unparseable rather than either answer.
+            if (result.planUrls.length) {
+                result.planUrls = [];
+                result.reason = 'Notes say Plans: None but list plan URLs';
+                return result;
+            }
+            if (badLine) {
+                return notUnderstood(result, badLine);
+            }
+            result.ok = true;
             return result;
         }
 
-        result.hasPlans = result.planUrls.length > 0;
+        if (inline) {
+            if (!(m = RE_PLAN_INLINE.exec(inline))) {
+                return notUnderstood(result, result.plansLine);
+            }
+            result.planUrls.unshift(m[1]);
+        }
+        if (badLine) {
+            return notUnderstood(result, badLine);
+        }
+        if (!result.planUrls.length) {
+            // "Plans:" with nothing after it.
+            return notUnderstood(result, result.plansLine);
+        }
+
+        result.hasPlans = true;
         result.ok = true;
+        return result;
+    }
+
+    function notUnderstood(result, line) {
+        result.planUrls = [];
+        result.hasPlans = false;
+        result.reason = 'Plans line not understood: ' + line;
         return result;
     }
 

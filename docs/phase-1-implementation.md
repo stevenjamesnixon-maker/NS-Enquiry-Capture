@@ -1,6 +1,7 @@
 # Enquiry capture v1.0.0 — website Task processor
 
-Implements the 29 Sep 2026 brief. The canonical description of the result is
+Implements the 29 Sep 2026 brief and its amendment 1 (D3 tightened; the no-Opportunity
+message says what to do). The canonical description of the result is
 [`docs/context.md`](context.md); this file covers what was built, where the brief turned out
 wrong, and what is still to check in Sandbox.
 
@@ -16,7 +17,7 @@ wrong, and what is still to check in Sandbox.
 | `…/lib/enq_lib_entity.js` | `readCustomer(id)` |
 | `…/lib/enq_lib_task.js` | `searchQueue`, `readTask`, `hasEarlierWebsiteTask`, `complete`, `reassign`, `fail` |
 | `…/lib/enq_lib_project.js` | `createProjectForEntity(cfg, input)` |
-| `test/parse.test.js`, `package.json` | 24 node tests (`npm test`, no dependencies) |
+| `test/parse.test.js`, `package.json` | 26 node tests (`npm test`, no dependencies) |
 | `README.md`, `reference/README.md`, `docs/context.md` | email-capture content replaced |
 
 All files are SuiteScript 2.1, ES5 style, `'use strict'`, `VERSION = '1.0.0'` and
@@ -24,7 +25,7 @@ All files are SuiteScript 2.1, ES5 style, `'use strict'`, `VERSION = '1.0.0'` an
 `Array.prototype.includes`. No numeric internal IDs. Nothing creates, edits or deletes an
 Opportunity; nothing updates a Project; there is no user event script.
 
-**Verification done here:** `npm test` (24 pass); `node --check` on every script; and an
+**Verification done here:** `npm test` (26 pass); `node --check` on every script; and an
 off-repo harness with mocked `N/*` modules that ran the processor end to end: cases 1–4 and F,
 D2(b) with two Tasks on a new Lead, the rerun of a completed Task (Project reused, "already
 existed"), the UE not raising an Opportunity (fallback with the PROJ_UE message), a cleared
@@ -34,23 +35,26 @@ Sandbox: every NetSuite field ID and value in it was mocked.
 
 ## Contradictions and defects found in the brief
 
-1. **Branch.** The brief says `feat/enquiry-capture-v1`. This session is restricted to pushing
-   `claude/fervent-dijkstra-kglmvu`, so the work is on that branch and the PR is from it.
-   Rename the branch if the name matters.
+1. **Branch.** The brief says `feat/enquiry-capture-v1`. The work is on
+   `claude/fervent-dijkstra-kglmvu` and the PR is from it; amendment 1 accepted that branch in
+   place of `feat/enquiry-capture-v1`.
 2. **Test 11 cannot end with a linked Opportunity.** `project_ue.js` only raises the lead
    Opportunity on **create** (`if (isCreate)`, line 206, hint); an edit reconciles alternate
    customers only. So a Project saved while the Execution Context filter lacked Scheduled never
    gets its lead Opportunity from the UE, on a rerun (D4 never re-saves) or on a later edit.
-   Expected: Task on the fallback both times; a person raises the Opportunity by hand.
+   Accepted in amendment 1. Expected: the fallback gets the Task, with the result `Project <name>
+   created (or found) but no Opportunity was raised: check the PROJ_UE execution log, then raise
+   the Opportunity by hand`; a person raises the Opportunity by hand; a rerun changes nothing
+   (the Task is no longer in the queue, and D4 would reuse the Project without saving it).
 3. **D2(a) wording.** "A customer created *after* the Task, or more than 1 minute after it, is
    not new" reads both ways. Implemented as: up to 1 minute after the Task still passes (the
    timestamps are to the minute and can straddle a boundary); more than 1 minute after fails.
    Both are logged. Tighten to 0 in `parse.createdWithinWindow()` if that was the intent.
-4. **D3 lets free text on the Plans: line mean "no plans".** `Plans: see attached` with no
-   numbered URL lines is "no plans" as briefed, so a template change of that shape would
-   complete new-lead Tasks (case 3), against "a change to the feed template must never silently
-   complete Tasks". Implemented as briefed; the plans line is logged on every Task. Say if it
-   should be unparseable instead.
+4. **D3 let free text on the Plans: line mean "no plans".** `Plans: see attached` with no
+   numbered URL lines was "no plans" as briefed, so a template change of that shape would have
+   completed new-lead Tasks (case 3). Amendment 1 tightened D3: only the literal `Plans: None`
+   means no plans; anything else that isn't plan URLs is unparseable (`Plans line not
+   understood: <line>`). See `docs/context.md` D3.
 5. **`project_ue.js` lines 71–74** (hint) claim the write-back re-triggers the UE. Per C1 it
    does not; corrected in `docs/context.md`. The file is untouched.
 6. **`gh pr create`** is not available here; the PR was opened through the GitHub API with
@@ -114,7 +118,8 @@ Sandbox: every NetSuite field ID and value in it was mocked.
 
 ## Sandbox tests
 
-As in the brief (1–17). For test 11 expect item 2 under Contradictions.
+As in the brief (1–17). For test 11 expect item 2 under Contradictions: the fallback gets the
+Task, a person raises the Opportunity by hand, and a rerun changes nothing.
 
 ## Reference file
 

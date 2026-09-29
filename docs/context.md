@@ -204,11 +204,18 @@ These will look wrong to a fresh reader. Do not reverse them.
   earlier `createddate` (same minute: the lower internal ID is earlier).
   Everything else is **existing**. Wrongly "new" silently completes a real customer's enquiry;
   wrongly "existing" only puts an open Task in front of the rep.
-- **D3. The plans line decides, and only an unambiguous line counts.** No plans: `Plans: None`,
-  or `Plans:` followed by no numbered URL line. Plans: a line matching `^\d+\.\s*https?://\S+$`
-  after the **last** `Plans:` line, or a URL on the `Plans:` line itself. **Unparseable** (to the
-  fallback, never Completed): no `GF entry:` line, no `Plans:` line, `Plans: None` followed by
-  plan URLs, a title not starting `Website form submission`, an empty company.
+- **D3. The plans line decides, and only an unambiguous line counts.** The **last** `Plans:`
+  line starts the block.
+
+  | Plans block | Result |
+  |---|---|
+  | `Plans:` line is exactly `None` (case-insensitive, trimmed), nothing under it | no plans |
+  | at least one plan URL (a line matching `^\d+\.\s*https?://\S+$`, or a URL on the `Plans:` line itself), and nothing else | plans |
+  | `Plans: None` together with plan URLs | unparseable |
+  | anything else: `Plans:` with nothing after it; `Plans: see attached`; a numbered line without a URL; any other line under the block | unparseable, reason `Plans line not understood: <line>` |
+
+  **Unparseable** (to the fallback, never Completed) also covers: no `GF entry:` line, no
+  `Plans:` line, a title not starting `Website form submission`, an empty company.
 - **D4. Idempotency is by GF entry.** Before creating a Project, search `customrecord_project`
   for `custrecord_proj_gf_entry` = the entry (inactive Projects included). A match is used as it
   is: nothing is created or saved. A match on a different customer throws (to the fallback).
@@ -267,9 +274,9 @@ These will look wrong to a fresh reader. Do not reverse them.
   scripted save leaves it blank, decide whether it matters.
 - **Reassigning a Task may email the new assignee** if the feed ticks the Task's notify option.
   Not suppressed; check in Sandbox.
-- **A Plans: line with free text** (`Plans: see attached`) and no numbered URLs counts as no
-  plans (D3 as briefed). A template change of that shape would complete new-lead Tasks (case 3).
-  The plans line is logged for every Task.
+- **Only the literal `Plans: None` means no plans** (D3, amendment 1). Any other shape of plans
+  block goes to the fallback, so a feed-template change fails Tasks loudly rather than completing
+  them. The plans line is logged for every Task.
 - **Queue page size 1,000.** Far above what one run's governance allows (~80 units per Task).
 
 ## 7. Audit log keys

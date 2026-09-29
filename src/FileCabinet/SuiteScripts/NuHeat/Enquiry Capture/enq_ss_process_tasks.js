@@ -196,7 +196,8 @@ function (runtime, config, parse, entity, task, project) {
 
             if (!proj.leadOppId) {
                 return failTask(cfg, id, counts,
-                    'Project ' + proj.projectName + ' created (or found), no Opportunity: check the PROJ_UE execution log');
+                    'Project ' + proj.projectName + ' created (or found) but no Opportunity was raised: ' +
+                    'check the PROJ_UE execution log, then raise the Opportunity by hand');
             }
 
             var n = notes.planUrls.length;
