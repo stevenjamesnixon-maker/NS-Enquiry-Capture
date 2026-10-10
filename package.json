@@ -2,8 +2,8 @@
   "name": "ns-enquiry-capture",
   "version": "1.0.0",
   "private": true,
-  "description": "NetSuite website Task processor for Nu-Heat enquiries. Tests cover the pure parsing module only.",
+  "description": "NetSuite website Task processor for Nu-Heat enquiries. Tests cover the parsing module and createProjectForEntity (NetSuite modules stubbed).",
   "scripts": {
-    "test": "node --test test/parse.test.js"
+    "test": "node --test test/*.test.js"
   }
 }

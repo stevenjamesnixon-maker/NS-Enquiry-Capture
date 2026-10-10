@@ -1,7 +1,7 @@
 /**
  * @NApiVersion 2.1
  * @NModuleScope SameAccount
- * @version 1.0.0
+ * @version 1.0.1
  */
 
 /**
@@ -22,6 +22,8 @@
  *   - Idempotent by GF entry (D4): an existing Project with the same entry is
  *     used as it is, and nothing is created.
  *   - custrecord_proj_sales_rep is not set: it sources from the customer.
+ *   - custrecord_proj_notes is never written (D5, 10 Oct 2026): free text on
+ *     the Project causes side effects. input.notes is accepted and ignored.
  */
 
 define(['N/record', 'N/search', './enq_lib_config', './enq_lib_parse'],
@@ -29,17 +31,20 @@ function (record, search, config, parse) {
 
     'use strict';
 
-    var VERSION = '1.0.0';
+    var VERSION = '1.0.1';
 
     var REC_PROJECT = 'customrecord_project';
 
     var MAX_ADDRESS_LENGTH = 300;    // D6: custbody_opp_site_adress may be Free-Form Text
-    var MAX_NOTES_LENGTH   = 3900;
 
     /**
      * @param {Object} cfg    loaded configuration (reserved for callers; unused in v1)
      * @param {{entityId: string, title: string, siteAddress: string, notes: string,
      *          gfEntry: string}} input
+     *        notes is accepted and IGNORED (D5, 10 Oct 2026): free text is never
+     *        written to the Project. The enquiry text stays on the website Task,
+     *        which is linked to the Opportunity. Logged once at debug
+     *        (ENQ_NOTES_IGNORED) with its length.
      * @returns {{projectId: string, projectName: string, leadOppId: string|null,
      *            reused: boolean}}
      */
@@ -82,11 +87,17 @@ function (record, search, config, parse) {
                 String(input.siteAddress).length + ' -> ' + MAX_ADDRESS_LENGTH + ' characters');
         }
 
+        // D5: never write free text to the Project's notes field.
+        if (input.notes !== undefined && input.notes !== null) {
+            config.debug('ENQ_NOTES_IGNORED',
+                'customer ' + entityId + ', GF entry ' + gfEntry +
+                ', notes length: ' + String(input.notes).length);
+        }
+
         var proj = record.create({ type: REC_PROJECT });
         proj.setValue({ fieldId: 'altname',                      value: input.title || '' });
         proj.setValue({ fieldId: 'custrecord_proj_customer',     value: entityId });
         proj.setValue({ fieldId: 'custrecord_proj_address',      value: address });
-        proj.setValue({ fieldId: 'custrecord_proj_notes',        value: parse.truncate(input.notes, MAX_NOTES_LENGTH) });
         proj.setValue({ fieldId: config.FIELD_PROJECT_GF_ENTRY,  value: gfEntry });
         proj.setValue({ fieldId: 'custrecord_proj_create_qr_pq', value: true });
 

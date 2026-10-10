@@ -6,8 +6,8 @@ repository wins**: read the file, then fix this document in the same PR.
 Scope of this document: the SuiteScript in this repo and the NetSuite configuration it depends
 on. It does not describe the wider NetSuite account.
 
-**Last updated:** 29 Sep 2026
-**Status:** v1.0.0 built on the PR branch, **not deployed**. Sandbox checks open: see
+**Last updated:** 10 Oct 2026
+**Status:** v1.0.0 (`enq_lib_project.js` 1.0.1) built on the PR branch, **not deployed**. Sandbox checks open: see
 [`phase-1-implementation.md`](phase-1-implementation.md).
 
 ---
@@ -63,8 +63,9 @@ when it is Completed or reassigned. Nothing is retried forever, and nothing sits
 | `lib/enq_lib_parse.js` | 1.0.0 | pure functions: Notes parser, truncate, address flattening, the D2 date tests |
 | `lib/enq_lib_entity.js` | 1.0.0 | customer read: datecreated, salesrep, display name, default address |
 | `lib/enq_lib_task.js` | 1.0.0 | queue search, earlier-website-Task search, Task updates |
-| `lib/enq_lib_project.js` | 1.0.0 | `createProjectForEntity(cfg, input)`: the only code that creates a Project |
+| `lib/enq_lib_project.js` | 1.0.1 | `createProjectForEntity(cfg, input)`: the only code that creates a Project |
 | `test/parse.test.js` | — | node tests for `enq_lib_parse` (`npm test`) |
+| `test/project.test.js` | — | node tests for `createProjectForEntity`, N/record and N/search stubbed (`npm test`) |
 
 All under `src/FileCabinet/SuiteScripts/NuHeat/Enquiry Capture/`. The folder is `NuHeat`,
 matching Online quote and Design Email; Steve confirms the File Cabinet casing before upload.
@@ -112,6 +113,10 @@ Tasks, email or parsing, throws before touching anything when `entityId` or `gfE
 reuses a Project already carrying the GF entry (D4), and throws if that Project belongs to a
 different customer. No other caller exists yet.
 
+`notes` is **accepted and ignored** (since 1.0.1, 10 Oct 2026): it stays in the input shape so
+callers don't break, but nothing is written to the Project. Its length is logged at debug as
+`ENQ ENQ_NOTES_IGNORED`. See D5.
+
 ## 3. Environments
 
 | Setting | Value |
@@ -136,9 +141,12 @@ customdeploy_enq_ss_process_tasks (every 15 min) ─┘
    │   new/existing (D2)
    │   no plans: reassign to the rep (1) or complete (3)
    │   plans:    createProjectForEntity() ─ D4 search, else record.create + save
+   │                 (title, customer, site address, GF entry, auto-create; the Task's
+   │                  notes are passed as input.notes and ignored: D5)
    │                 └──► customscript_project_ue afterSubmit raises the Opportunity and
    │                      writes it to custrecord_proj_lead_opp (inside our save)
-   │             re-read custrecord_proj_lead_opp ─ complete with transaction (2, 4)
+   │             re-read custrecord_proj_lead_opp ─ complete with transaction (2, 4);
+   │             the Task keeps its Notes (the enquiry text) and is linked to the Opportunity
    │   anything else: reassign to the fallback, result "ERROR: …" (F)
    │ search again until nothing new or governance is low
 ```
@@ -191,6 +199,10 @@ or the single line `Plans: None`. The parser normalises `\r\n`/`\r`, turns HTML 
 
 These will look wrong to a fresh reader. Do not reverse them.
 
+- **Never write free text to the Project's notes field: it causes side effects on the Project
+  record (10 Oct 2026). The enquiry text lives on the website Task, which is linked to the
+  opportunity.**
+
 - **D1. No Task user event in v1.** One scheduled deployment every 15 minutes is the only
   trigger. A queuing user event would add an "already queued" race, a second deployment able to
   run alongside the first, and a dependency on the plugin's web-services context. NetSuite never
@@ -219,8 +231,11 @@ These will look wrong to a fresh reader. Do not reverse them.
 - **D4. Idempotency is by GF entry.** Before creating a Project, search `customrecord_project`
   for `custrecord_proj_gf_entry` = the entry (inactive Projects included). A match is used as it
   is: nothing is created or saved. A match on a different customer throws (to the fallback).
-- **D5. Plans stay as links.** The Project's notes hold the Task's full normalised notes, plan
-  URLs included. No file download.
+- **D5. Plans stay as links, on the Task.** *(Revised 10 Oct 2026; until 1.0.1 the Project's
+  `custrecord_proj_notes` held the Task's full normalised notes.)* Nothing is written to the
+  Project's notes. The website Task's Notes (`message`) keep the full submission, plan URLs
+  included, and are never rewritten by this repo; in cases 2 and 4 the Task's `transaction` is
+  set to the Opportunity, so the enquiry text is reachable from it. No file download.
 - **D6. The site address is truncated to 300 characters** (logged): the Opportunity's
   `custbody_opp_site_adress` may be Free-Form Text.
 - **D7. The Task is updated last**, after the Project exists and its Opportunity has been read,

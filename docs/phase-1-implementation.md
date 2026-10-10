@@ -113,7 +113,6 @@ Sandbox: every NetSuite field ID and value in it was mocked.
 | `datecreated` precision and timezone vs the Task's `createddate` | `readCustomer`, `readTask` | raw and ISO in `ENQ task … new/existing` |
 | `custrecord_proj_gf_entry`, `custevent_enq_result` IDs as created | `enq_lib_config.js` | tests 2 and 1 |
 | Reassigning a Task emails the new assignee? | `reassign` | tests 1 and 7 |
-| `custrecord_proj_notes` takes 3,900 characters | `enq_lib_project.js` | a long Message |
 | `customdeploy_project_ue` runs for the Scheduled context | Steve's checklist 3 | `PROJ_UE afterSubmit` line in test 2 |
 
 ## Sandbox tests
