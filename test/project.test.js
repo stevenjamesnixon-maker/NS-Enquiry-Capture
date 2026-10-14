@@ -109,3 +109,50 @@ test('no notes: Project created, nothing logged as ignored', function () {
     assert.strictEqual(Object.prototype.hasOwnProperty.call(saved, 'custrecord_proj_notes'), false);
     assert.strictEqual(logs.filter(function (l) { return l.title.indexOf('ENQ_NOTES_IGNORED') !== -1; }).length, 0);
 });
+
+function withUrgent(urgent) {
+    var input = {};
+    Object.keys(INPUT).forEach(function (k) { input[k] = INPUT[k]; });
+    if (urgent !== undefined) {
+        input.urgent = urgent;
+    }
+    return input;
+}
+
+function titled(key) {
+    return logs.filter(function (l) { return l.title.indexOf(key) !== -1; });
+}
+
+test('urgent: true ticks custrecord_proj_urgent on the new Project and logs ENQ_URGENT_SET', function () {
+    reset();
+    var r = project.createProjectForEntity({}, withUrgent(true));
+    assert.strictEqual(saved.custrecord_proj_urgent, true);
+    var set = titled('ENQ_URGENT_SET');
+    assert.strictEqual(set.length, 1);
+    assert.strictEqual(set[0].level, 'audit');
+    assert.ok(set[0].details.indexOf('GF entry 320422') !== -1);
+    assert.ok(set[0].details.indexOf('Project ' + r.projectId) !== -1);
+});
+
+test('urgent absent or false: custrecord_proj_urgent is not on the save at all', function () {
+    [undefined, false].forEach(function (urgent) {
+        reset();
+        project.createProjectForEntity({}, withUrgent(urgent));
+        assert.ok(saved, 'a Project was saved');
+        assert.strictEqual(Object.prototype.hasOwnProperty.call(saved, 'custrecord_proj_urgent'), false);
+        assert.strictEqual(titled('ENQ_URGENT_SET').length, 0);
+    });
+});
+
+test('reuse (D4) with urgent: true saves nothing and logs ENQ_URGENT_SKIPPED_REUSE', function () {
+    reset();
+    searchRows = [{ id: 77, getValue: function () { return '42'; } }];
+    var r = project.createProjectForEntity({}, withUrgent(true));
+    assert.strictEqual(r.reused, true);
+    assert.strictEqual(saved, null, 'no Project save');
+    assert.strictEqual(titled('ENQ_URGENT_SET').length, 0);
+    var skipped = titled('ENQ_URGENT_SKIPPED_REUSE');
+    assert.strictEqual(skipped.length, 1);
+    assert.strictEqual(skipped[0].level, 'audit');
+    assert.ok(skipped[0].details.indexOf('Project 77') !== -1);
+});
