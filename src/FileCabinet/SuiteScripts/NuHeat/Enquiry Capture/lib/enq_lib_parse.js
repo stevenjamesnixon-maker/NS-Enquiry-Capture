@@ -1,7 +1,7 @@
 /**
  * @NApiVersion 2.1
  * @NModuleScope SameAccount
- * @version 1.0.0
+ * @version 1.1.0
  */
 
 /**
@@ -42,9 +42,14 @@ define([], function () {
 
     'use strict';
 
-    var VERSION = '1.0.0';
+    var VERSION = '1.1.0';
 
     var WEBSITE_TITLE_PREFIX = 'Website form submission';
+
+    // The website "Get a quote" answer that makes the Project, and so its
+    // Opportunity, urgent. A display label, compared after normalising; not an
+    // internal ID. Kept here, not in enq_lib_config, so this module stays pure.
+    var URGENT_STAGE_LABEL = 'Ready for system now';
 
     var RE_GF_ENTRY   = /^GF entry:\s*(.*)$/i;
     var RE_FORM       = /^Form:\s*(.*)$/i;
@@ -276,6 +281,34 @@ define([], function () {
         return s;
     }
 
+    /**
+     * Is any of the Notes' project stages "Ready for system now"?
+     *
+     * Each stage and the label are trimmed, lower-cased and have internal
+     * whitespace collapsed before comparing. Anything else, including an empty,
+     * null or undefined list, is not urgent.
+     *
+     * @param {string[]|null|undefined} stages parseNotes(...).projectStage
+     * @returns {boolean}
+     */
+    function isUrgentStage(stages) {
+        if (!stages || !stages.length) {
+            return false;
+        }
+        var target = normaliseLabel(URGENT_STAGE_LABEL);
+        for (var i = 0; i < stages.length; i++) {
+            if (normaliseLabel(stages[i]) === target) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    function normaliseLabel(v) {
+        var s = (v === null || v === undefined) ? '' : String(v);
+        return s.trim().toLowerCase().replace(/\s+/g, ' ');
+    }
+
     function isWebsiteTitle(title) {
         return String(title || '').indexOf(WEBSITE_TITLE_PREFIX) === 0;
     }
@@ -338,11 +371,13 @@ define([], function () {
     return {
         VERSION:              VERSION,
         WEBSITE_TITLE_PREFIX: WEBSITE_TITLE_PREFIX,
+        URGENT_STAGE_LABEL:   URGENT_STAGE_LABEL,
         normalise:            normalise,
         parseNotes:           parseNotes,
         truncate:             truncate,
         flattenAddress:       flattenAddress,
         isWebsiteTitle:       isWebsiteTitle,
+        isUrgentStage:        isUrgentStage,
         createdWithinWindow:  createdWithinWindow,
         isEarlierTask:        isEarlierTask
     };

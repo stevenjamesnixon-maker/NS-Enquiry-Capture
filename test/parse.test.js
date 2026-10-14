@@ -249,3 +249,49 @@ test('isEarlierTask (D2b)', function () {
     assert.strictEqual(parse.isEarlierTask(t, 12, t, 9), false);
     assert.strictEqual(parse.isEarlierTask(null, 12, t, 9), true);
 });
+
+// isUrgentStage: "Ready for system now" makes the Project (and its Opportunity) urgent.
+
+test('isUrgentStage: exact label is urgent', function () {
+    assert.strictEqual(parse.isUrgentStage(['Ready for system now']), true);
+});
+
+test('isUrgentStage: case and whitespace are normalised', function () {
+    assert.strictEqual(parse.isUrgentStage(['  ready  for system NOW ']), true);
+});
+
+test('isUrgentStage: another stage is not urgent', function () {
+    assert.strictEqual(parse.isUrgentStage(['Build started']), false);
+});
+
+test('isUrgentStage: empty list is not urgent', function () {
+    assert.strictEqual(parse.isUrgentStage([]), false);
+});
+
+test('isUrgentStage: null and undefined are not urgent', function () {
+    assert.strictEqual(parse.isUrgentStage(null), false);
+    assert.strictEqual(parse.isUrgentStage(undefined), false);
+});
+
+test('isUrgentStage: urgent when any of several stages matches', function () {
+    assert.strictEqual(parse.isUrgentStage(['Build started', 'Ready for system now']), true);
+});
+
+test('Notes with Project stage: Ready for system now | parse as urgent', function () {
+    var text = [
+        'GF entry: 321870',
+        'Form: Marketing - Get a quote',
+        '',
+        'Email: sam@example.com',
+        'Phone: 01234 567891',
+        'Project stage: Ready for system now |',
+        'Message: Ready to go.',
+        '',
+        'Plans:',
+        '1. https://www.nu-heat.co.uk/wp-content/uploads/gravity_forms/plan-2.pdf'
+    ].join('\n');
+    var r = parse.parseNotes(text);
+    assert.strictEqual(r.ok, true);
+    assert.deepStrictEqual(r.projectStage, ['Ready for system now']);
+    assert.strictEqual(parse.isUrgentStage(r.projectStage), true);
+});

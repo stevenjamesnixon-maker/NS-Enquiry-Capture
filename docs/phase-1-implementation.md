@@ -17,7 +17,7 @@ wrong, and what is still to check in Sandbox.
 | `…/lib/enq_lib_entity.js` | `readCustomer(id)` |
 | `…/lib/enq_lib_task.js` | `searchQueue`, `readTask`, `hasEarlierWebsiteTask`, `complete`, `reassign`, `fail` |
 | `…/lib/enq_lib_project.js` | `createProjectForEntity(cfg, input)` |
-| `test/parse.test.js`, `package.json` | 26 node tests (`npm test`, no dependencies) |
+| `test/parse.test.js`, `package.json` | 26 node tests at v1.0.0 (`npm test`, no dependencies). `test/project.test.js` (3 tests) came in 1.0.1; at 1.1.0 the totals are 33 + 6 = 39 |
 | `README.md`, `reference/README.md`, `docs/context.md` | email-capture content replaced |
 
 All files are SuiteScript 2.1, ES5 style, `'use strict'`, `VERSION = '1.0.0'` and

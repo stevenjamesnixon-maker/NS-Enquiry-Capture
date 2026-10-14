@@ -6,9 +6,10 @@ repository wins**: read the file, then fix this document in the same PR.
 Scope of this document: the SuiteScript in this repo and the NetSuite configuration it depends
 on. It does not describe the wider NetSuite account.
 
-**Last updated:** 10 Oct 2026
-**Status:** v1.0.0 (`enq_lib_project.js` 1.0.1) built on the PR branch, **not deployed**. Sandbox checks open: see
-[`phase-1-implementation.md`](phase-1-implementation.md).
+**Last updated:** 14 Oct 2026
+**Status:** v1.0.0 (`enq_lib_project.js` 1.0.1) merged to `main` and deployed to Production.
+v1.1.0 (project stage → Urgent, 14 Oct 2026) is on branch `claude/beautiful-gauss-tvshnu`, **not
+merged, not deployed**. Sandbox checks open: see [`phase-1-implementation.md`](phase-1-implementation.md).
 
 ---
 
@@ -58,12 +59,12 @@ when it is Completed or reassigned. Nothing is retried forever, and nothing sits
 
 | Component | Version | Purpose |
 |---|---|---|
-| `enq_ss_process_tasks.js` | 1.0.0 | scheduled script: queue loop and case dispatch only |
+| `enq_ss_process_tasks.js` | 1.1.0 | scheduled script: queue loop and case dispatch only |
 | `lib/enq_lib_config.js` | 1.0.0 | parameters, what empty means, audit key, field IDs, date parsing |
-| `lib/enq_lib_parse.js` | 1.0.0 | pure functions: Notes parser, truncate, address flattening, the D2 date tests |
+| `lib/enq_lib_parse.js` | 1.1.0 | pure functions: Notes parser, `isUrgentStage`, truncate, address flattening, the D2 date tests |
 | `lib/enq_lib_entity.js` | 1.0.0 | customer read: datecreated, salesrep, display name, default address |
 | `lib/enq_lib_task.js` | 1.0.0 | queue search, earlier-website-Task search, Task updates |
-| `lib/enq_lib_project.js` | 1.0.1 | `createProjectForEntity(cfg, input)`: the only code that creates a Project |
+| `lib/enq_lib_project.js` | 1.1.0 | `createProjectForEntity(cfg, input)`: the only code that creates a Project |
 | `test/parse.test.js` | — | node tests for `enq_lib_parse` (`npm test`) |
 | `test/project.test.js` | — | node tests for `createProjectForEntity`, N/record and N/search stubbed (`npm test`) |
 
@@ -104,7 +105,7 @@ without touching any Task.
 `lib/enq_lib_project.js` → `createProjectForEntity(cfg, input)`:
 
 ```
-input:  { entityId, title, siteAddress, notes, gfEntry }
+input:  { entityId, title, siteAddress, notes, gfEntry, urgent? }
 result: { projectId, projectName, leadOppId|null, reused: bool }
 ```
 
@@ -116,6 +117,10 @@ different customer. No other caller exists yet.
 `notes` is **accepted and ignored** (since 1.0.1, 10 Oct 2026): it stays in the input shape so
 callers don't break, but nothing is written to the Project. Its length is logged at debug as
 `ENQ ENQ_NOTES_IGNORED`. See D5.
+
+`urgent` is optional (since 1.1.0, 14 Oct 2026). `true` ticks `custrecord_proj_urgent` on a **new**
+Project; anything else leaves the field unset (NetSuite's default; `false` is never written). A
+reused Project (D4) is never saved again for it. See "Project stage → Urgent" in §4.
 
 ## 3. Environments
 
@@ -141,8 +146,9 @@ customdeploy_enq_ss_process_tasks (every 15 min) ─┘
    │   new/existing (D2)
    │   no plans: reassign to the rep (1) or complete (3)
    │   plans:    createProjectForEntity() ─ D4 search, else record.create + save
-   │                 (title, customer, site address, GF entry, auto-create; the Task's
-   │                  notes are passed as input.notes and ignored: D5)
+   │                 (title, customer, site address, GF entry, auto-create, Urgent when the
+   │                  project stage is "Ready for system now"; the Task's notes are
+   │                  passed as input.notes and ignored: D5)
    │                 └──► customscript_project_ue afterSubmit raises the Opportunity and
    │                      writes it to custrecord_proj_lead_opp (inside our save)
    │             re-read custrecord_proj_lead_opp ─ complete with transaction (2, 4);
@@ -169,6 +175,23 @@ Plans:
 
 or the single line `Plans: None`. The parser normalises `\r\n`/`\r`, turns HTML (`<br>`, `</p>`,
 `</div>`) into lines and decodes entities (`&amp;` last), and trims every line.
+
+### Project stage → Urgent (since 1.1.0, 14 Oct 2026)
+
+- The `Project stage:` line is parsed into `projectStage` (`string[]`, split on `|`).
+- `parse.isUrgentStage(projectStage)` is true when any stage, trimmed, lower-cased and with
+  whitespace collapsed, equals `Ready for system now` (`URGENT_STAGE_LABEL` in
+  `enq_lib_parse.js`, a display label, not an internal ID). It sits beside
+  `WEBSITE_TITLE_PREFIX` rather than in `enq_lib_config.js` so the parse module stays pure.
+- The processor passes it as `input.urgent`. A **new** Project gets `custrecord_proj_urgent` =
+  true and `ENQ ENQ_URGENT_SET` is logged. `customscript_project_ue` copies the field to
+  `custbody_urgent` on the Opportunity it raises (`project_ue.js` ~162 → ~459, hint). This
+  repo still never writes the Opportunity.
+- A reused Project (D4) is not saved again; `ENQ ENQ_URGENT_SKIPPED_REUSE` is logged instead.
+  Its Opportunity keeps whatever Urgent it has.
+- **Build stage (`custbody_build_stage`) is deliberately not mapped** (Steve, 14 Oct 2026). No
+  settings or mapping parameter exist for either field.
+- Project stage and the urgent result are logged for every Task in `ENQ task … parsed`.
 
 ### Confirmed facts this design rests on
 
@@ -285,6 +308,10 @@ These will look wrong to a fresh reader. Do not reverse them.
   `status`, `company`, `title`, `createddate`, `message`, `transaction`, `completeddate`; the
   status value `COMPLETE`; the customer search column `address` (and whether it returns one row
   per address); `datecreated` precision and timezone. Every one is logged raw at audit.
+- **Urgent (⚠️, Sandbox):** the website label must read exactly `Ready for system now` (case and
+  spacing aside) in the Notes, and `custrecord_proj_urgent` must reach `custbody_urgent`. The
+  stage and the urgent result are in `ENQ task … parsed`; a mismatch shows there as `urgent:
+  false`.
 - **`completeddate`** is not set by the script. `complete()` logs its value after the save; if a
   scripted save leaves it blank, decide whether it matters.
 - **Reassigning a Task may email the new assignee** if the feed ticks the Task's notify option.
@@ -301,6 +328,8 @@ These will look wrong to a fresh reader. Do not reverse them.
 | `ENQ` | every line written by this project's scripts starts `ENQ ` | grep the scheduled script's execution log; each create and Task update logs its record IDs |
 | `ENQ config invalid` (ERROR) | a parameter is missing or invalid; no Task touched | fix the parameter named |
 | `ENQ task update failed` (ERROR) | D8: a Task write failed twice; it stays in the queue | read the error; the next run retries |
+| `ENQ ENQ_URGENT_SET` | a new Project was created with `custrecord_proj_urgent` = true (stage "Ready for system now"); GF entry and Project ID | nothing; check the Opportunity has Urgent ticked if in doubt |
+| `ENQ ENQ_URGENT_SKIPPED_REUSE` | the Task's stage was urgent but its Project already existed (D4), so Urgent was not written | tick Urgent on the Opportunity by hand if it should be |
 | `PROJ_UE` | written by `customscript_project_ue` (not this repo) | read when a Task's result says no Opportunity was raised |
 
 The scheduled deployment logs at **Audit**. A missing permission can show up as an empty result

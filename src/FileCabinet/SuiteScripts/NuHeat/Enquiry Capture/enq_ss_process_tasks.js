@@ -2,7 +2,7 @@
  * @NApiVersion 2.1
  * @NScriptType ScheduledScript
  * @NModuleScope SameAccount
- * @version 1.0.0
+ * @version 1.1.0
  */
 
 /**
@@ -43,7 +43,7 @@ function (runtime, config, parse, entity, task, project) {
 
     'use strict';
 
-    var VERSION = '1.0.0';
+    var VERSION = '1.1.0';
 
     function execute(context) {
 
@@ -147,11 +147,14 @@ function (runtime, config, parse, entity, task, project) {
             }
 
             var notes = parse.parseNotes(t.notes);
+            var urgent = parse.isUrgentStage(notes.projectStage);
             config.audit('task ' + id + ' parsed',
                 'ok: ' + notes.ok + (notes.reason ? ' (' + notes.reason + ')' : '') +
                 ', GF entry: ' + notes.gfEntry +
                 ', plans line: ' + JSON.stringify(notes.plansLine) +
-                ', plans: ' + notes.planUrls.length);
+                ', plans: ' + notes.planUrls.length +
+                ', project stage: ' + JSON.stringify(notes.projectStage) +
+                ', urgent: ' + urgent);
             if (!notes.ok) {
                 return failTask(cfg, id, counts, notes.reason);
             }
@@ -189,7 +192,8 @@ function (runtime, config, parse, entity, task, project) {
                 title:       title,
                 siteAddress: cust.defaultAddress || title,
                 notes:       parse.normalise(t.notes),
-                gfEntry:     notes.gfEntry
+                gfEntry:     notes.gfEntry,
+                urgent:      urgent
             });
             progress = 'Project ' + proj.projectName + ' (' + proj.projectId + ') ' +
                 (proj.reused ? 'already existed' : 'created') + '. ';

@@ -1,7 +1,7 @@
 /**
  * @NApiVersion 2.1
  * @NModuleScope SameAccount
- * @version 1.0.1
+ * @version 1.1.0
  */
 
 /**
@@ -24,6 +24,11 @@
  *   - custrecord_proj_sales_rep is not set: it sources from the customer.
  *   - custrecord_proj_notes is never written (D5, 10 Oct 2026): free text on
  *     the Project causes side effects. input.notes is accepted and ignored.
+ *   - custrecord_proj_urgent is set to true only on a NEW Project and only when
+ *     input.urgent === true (14 Oct 2026). Otherwise it is not set at all, so
+ *     NetSuite's default stands; false is never written. The project UE copies it
+ *     to custbody_urgent on the Opportunity it raises. A reused Project (D4) is
+ *     never saved again to set it.
  */
 
 define(['N/record', 'N/search', './enq_lib_config', './enq_lib_parse'],
@@ -31,7 +36,7 @@ function (record, search, config, parse) {
 
     'use strict';
 
-    var VERSION = '1.0.1';
+    var VERSION = '1.1.0';
 
     var REC_PROJECT = 'customrecord_project';
 
@@ -40,7 +45,10 @@ function (record, search, config, parse) {
     /**
      * @param {Object} cfg    loaded configuration (reserved for callers; unused in v1)
      * @param {{entityId: string, title: string, siteAddress: string, notes: string,
-     *          gfEntry: string}} input
+     *          gfEntry: string, urgent: (boolean|undefined)}} input
+     *        urgent is optional: true ticks custrecord_proj_urgent on a new
+     *        Project; anything else leaves the field unset. Never applied to a
+     *        reused Project (logged as ENQ_URGENT_SKIPPED_REUSE).
      *        notes is accepted and IGNORED (D5, 10 Oct 2026): free text is never
      *        written to the Project. The enquiry text stays on the website Task,
      *        which is linked to the Opportunity. Logged once at debug
@@ -72,6 +80,13 @@ function (record, search, config, parse) {
                 'GF entry ' + gfEntry + ', customer ' + entityId +
                 ', name: ' + found.name + ', lead opp: ' + (found.leadOppId || '(none)') +
                 (existing.count > 1 ? ', NOTE: ' + existing.count + ' Projects carry this entry; the oldest is used' : ''));
+            // D4: the existing Project is used as it is. It is not saved again to
+            // set Urgent, and its Opportunity already exists.
+            if (input.urgent === true) {
+                config.audit('ENQ_URGENT_SKIPPED_REUSE',
+                    'GF entry ' + gfEntry + ', Project ' + existing.id +
+                    ': urgent stage on the Task, but the Project already existed; Urgent not written');
+            }
             return {
                 projectId:   String(existing.id),
                 projectName: found.name,
@@ -100,6 +115,10 @@ function (record, search, config, parse) {
         proj.setValue({ fieldId: 'custrecord_proj_address',      value: address });
         proj.setValue({ fieldId: config.FIELD_PROJECT_GF_ENTRY,  value: gfEntry });
         proj.setValue({ fieldId: 'custrecord_proj_create_qr_pq', value: true });
+        // Only ever true; when not urgent the field is left to NetSuite's default.
+        if (input.urgent === true) {
+            proj.setValue({ fieldId: 'custrecord_proj_urgent', value: true });
+        }
 
         // customscript_project_ue's afterSubmit runs inside this save.
         var projectId = String(proj.save({ enableSourcing: true, ignoreMandatoryFields: true }));
@@ -114,6 +133,11 @@ function (record, search, config, parse) {
             ', name: ' + link.name + ', title: ' + (input.title || '') +
             ', sales rep sourced: ' + (link.salesRepId || '(none)') +
             ', lead opp: ' + (link.leadOppId || '(none - check the PROJ_UE log)'));
+
+        if (input.urgent === true) {
+            config.audit('ENQ_URGENT_SET',
+                'GF entry ' + gfEntry + ', Project ' + projectId + ': custrecord_proj_urgent set to true');
+        }
 
         return {
             projectId:   projectId,
