@@ -6,10 +6,11 @@ repository wins**: read the file, then fix this document in the same PR.
 Scope of this document: the SuiteScript in this repo and the NetSuite configuration it depends
 on. It does not describe the wider NetSuite account.
 
-**Last updated:** 14 Oct 2026
+**Last updated:** 15 Oct 2026
 **Status:** v1.0.0 (`enq_lib_project.js` 1.0.1) merged to `main` and deployed to Production.
-v1.1.0 (project stage → Urgent, 14 Oct 2026) is on branch `claude/beautiful-gauss-tvshnu`, **not
-merged, not deployed**. Sandbox checks open: see [`phase-1-implementation.md`](phase-1-implementation.md).
+v1.1.0 (project stage → Urgent, 14 Oct 2026) merged to `main` (PR #3). v1.2.0 (Show form and
+lead-magnet layouts; failures to the customer's sales rep, 15 Oct 2026) is on branch
+`claude/show-form-lead-magnet-fail-to-rep`, **not merged, not deployed**. Sandbox checks open: see [`phase-1-implementation.md`](phase-1-implementation.md).
 
 ---
 
@@ -50,7 +51,7 @@ person.
 | 2 | Existing | Yes | Project → the project UE raises the Opportunity | `transaction` = the Opportunity; status Completed |
 | 3 | New | None | Nothing created | Status Completed |
 | 4 | New | Yes | As 2 | As 2 |
-| F | Anything fails, can't be parsed, or has no rep in case 1 | — | Nothing more | `assigned` = the fallback employee; status unchanged (Not Started) |
+| F | Anything fails, can't be parsed, or has no rep in case 1 | — | Nothing more | `assigned` = the customer's sales rep; the fallback employee only when there is no usable rep (no company, no rep, rep is the service account, customer read failed) or the rep can't be assigned; status unchanged (Not Started) |
 
 In every case `custevent_enq_result` records what happened in one line. A Task leaves the queue
 when it is Completed or reassigned. Nothing is retried forever, and nothing sits unseen.
@@ -59,11 +60,11 @@ when it is Completed or reassigned. Nothing is retried forever, and nothing sits
 
 | Component | Version | Purpose |
 |---|---|---|
-| `enq_ss_process_tasks.js` | 1.1.0 | scheduled script: queue loop and case dispatch only |
+| `enq_ss_process_tasks.js` | 1.2.0 | scheduled script: queue loop and case dispatch only |
 | `lib/enq_lib_config.js` | 1.0.0 | parameters, what empty means, audit key, field IDs, date parsing |
-| `lib/enq_lib_parse.js` | 1.1.0 | pure functions: Notes parser, `isUrgentStage`, truncate, address flattening, the D2 date tests |
+| `lib/enq_lib_parse.js` | 1.2.0 | pure functions: Notes parser, `isUrgentStage`, `isSectionHeading`, `failRecipient`, truncate, address flattening, the D2 date tests |
 | `lib/enq_lib_entity.js` | 1.0.0 | customer read: datecreated, salesrep, display name, default address |
-| `lib/enq_lib_task.js` | 1.0.0 | queue search, earlier-website-Task search, Task updates |
+| `lib/enq_lib_task.js` | 1.1.0 | queue search, earlier-website-Task search, Task updates |
 | `lib/enq_lib_project.js` | 1.1.0 | `createProjectForEntity(cfg, input)`: the only code that creates a Project |
 | `test/parse.test.js` | — | node tests for `enq_lib_parse` (`npm test`) |
 | `test/project.test.js` | — | node tests for `createProjectForEntity`, N/record and N/search stubbed (`npm test`) |
@@ -86,7 +87,7 @@ Not owned by this repo, but depended on:
 | Parameter | Type | Empty means | Behaviour |
 |---|---|---|---|
 | `custscript_enq_service_employee` | List/Record → Employee | the queue can't be identified | **throw** |
-| `custscript_enq_fallback_employee` | List/Record → Employee | failures would have nowhere to go | **throw**; also throws if it equals the service employee |
+| `custscript_enq_fallback_employee` | List/Record → Employee | failures would have nowhere to go | **throw**; also throws if it equals the service employee. Last resort, used when the customer has no usable sales rep (since 1.2.0) |
 | `custscript_enq_new_window_min` | Integer | default 10 | values below 1 or above 120, or not whole: **throw** |
 | `custscript_enq_min_governance` | Integer | default 500 | negative or not whole: **throw** |
 
@@ -141,7 +142,7 @@ customdeploy_enq_ss_process_tasks (every 15 min) ─┘
    │ searchQueue: open Tasks assigned to the service employee, oldest first
    │ per Task:
    │   readTask ─ title must start "Website form submission", company must be set
-   │   parseNotes ─ GF entry and Plans: lines required (D3)
+   │   parseNotes ─ GF entry: line required; no Plans: line means no plans (D3)
    │   readCustomer ─ datecreated, salesrep, display name, default address
    │   new/existing (D2)
    │   no plans: reassign to the rep (1) or complete (3)
@@ -153,11 +154,14 @@ customdeploy_enq_ss_process_tasks (every 15 min) ─┘
    │                      writes it to custrecord_proj_lead_opp (inside our save)
    │             re-read custrecord_proj_lead_opp ─ complete with transaction (2, 4);
    │             the Task keeps its Notes (the enquiry text) and is linked to the Opportunity
-   │   anything else: reassign to the fallback, result "ERROR: …" (F)
+   │   anything else: reassign to the customer's sales rep, else the fallback,
+   │                  result "ERROR: …" (F)
    │ search again until nothing new or governance is low
 ```
 
 ### The Notes template (C11; owned by the website side)
+
+This is the "Get a quote" layout. The other feeds are under "Feed layouts" below.
 
 ```
 GF entry: 320422
@@ -175,6 +179,35 @@ Plans:
 
 or the single line `Plans: None`. The parser normalises `\r\n`/`\r`, turns HTML (`<br>`, `</p>`,
 `</div>`) into lines and decodes entities (`&amp;` last), and trims every line.
+
+### Feed layouts (15 Oct 2026)
+
+All three use the same `Label: value` lines; the parser does not look at the `Form:` value.
+
+| Feed (`Form:`) | Layout | Parsed as |
+|---|---|---|
+| Get a quote | the template above: header, `Message:`, `Plans:` block last | as D3 |
+| `Marketing - Show form` | upper-case section headings (`CUSTOMER INFORMATION`, `PROJECT DETAILS`), no `Message:` line (free text is under `Project details:`), then `Plans:`, then a `PROJECT PARTNER` section | the plans block ends at `PROJECT PARTNER`; that section is recorded as `trailingSection` and not parsed |
+| `Marketing - Lead magnet - …` | header and `Message:` only; **no `Plans:` line** | no plans (`plansLineMissing: true`); the Message runs to the end of the Notes |
+
+**Section heading** (`parse.isSectionHeading`): a trimmed line that is non-empty, has no `:`,
+consists only of upper-case A–Z, spaces, `&`, `/` and `-`, and has at least 3 letters.
+`PROJECT PARTNER` is one; `Project partner`, `None` and `1. https://…` are not. The first heading
+after the last `Plans:` line ends the plans block; that line and everything after it are neither
+plan lines nor bad lines. Before it, D3 is unchanged. The partner section's contents are
+deliberately not parsed or used (partner data is a separate decision).
+
+**Parse result** (`parseNotes`): `ok`, `reason`, `gfEntry`, `form`, `email`, `phone`,
+`projectStage` (`string[]`), `message`, `plansLine`, `hasPlans`, `planUrls`, and since 1.2.0:
+
+- `plansLineMissing`: `true` when the Notes have no `Plans:` line at all (no plans), else `false`;
+- `trailingSection`: the section heading that ended the plans block, or `''`.
+
+Both are in the `ENQ task … parsed` line for every Task.
+
+Header fields (`GF entry:`, `Form:`, `Email:`, `Phone:`, `Project stage:`) are read only above
+the first `Message:` line, or above the `Plans:` line when there is no `Message:`, or to the end
+when there is neither.
 
 ### Project stage → Urgent (since 1.1.0, 14 Oct 2026)
 
@@ -249,11 +282,18 @@ These will look wrong to a fresh reader. Do not reverse them.
   | `Plans: None` together with plan URLs | unparseable |
   | anything else: `Plans:` with nothing after it; `Plans: see attached`; a numbered line without a URL; any other line under the block | unparseable, reason `Plans line not understood: <line>` |
 
-  **Unparseable** (to the fallback, never Completed) also covers: no `GF entry:` line, no
-  `Plans:` line, a title not starting `Website form submission`, an empty company.
+  **Unparseable** (F, never Completed) also covers: no `GF entry:` line, a title not starting
+  `Website form submission`, an empty company.
+
+  **Revised 15 Oct 2026 (Steve):** a missing `Plans:` line is **no plans**, not unparseable, so
+  the lead-magnet forms route like `Plans: None` (case 1 or 3). The reason `Notes have no Plans:
+  line` is gone. Trade-off, accepted: if the Get a quote feed ever dropped its `Plans:` line,
+  enquiries with plans would be treated as having none instead of failing;
+  `plans line missing: true` in `ENQ task … parsed` shows it. The plans block now also ends at
+  the first section heading (see "Feed layouts").
 - **D4. Idempotency is by GF entry.** Before creating a Project, search `customrecord_project`
   for `custrecord_proj_gf_entry` = the entry (inactive Projects included). A match is used as it
-  is: nothing is created or saved. A match on a different customer throws (to the fallback).
+  is: nothing is created or saved. A match on a different customer throws (F).
 - **D5. Plans stay as links, on the Task.** *(Revised 10 Oct 2026; until 1.0.1 the Project's
   `custrecord_proj_notes` held the Task's full normalised notes.)* Nothing is written to the
   Project's notes. The website Task's Notes (`message`) keep the full submission, plan URLs
@@ -266,15 +306,23 @@ These will look wrong to a fresh reader. Do not reverse them.
 - **D8. If the Task update itself fails,** `ENQ task update failed` is logged at ERROR with the
   Task ID and the run moves on. The Task stays in the queue and the next run retries it. This is
   the only automatic retry, and it only repeats the Task write. A failed *success* write (cases
-  1–4) is first redirected to the fallback with what was done so far; only if that also fails
-  does D8 apply.
+  1–4) is first redirected (F: the customer's sales rep, else the fallback) with what was done so
+  far; only if that also fails does D8 apply.
+- **F goes to the customer's sales rep (15 Oct 2026, Steve).** `failRecipient` (pure, in
+  `enq_lib_parse.js`) picks the customer's `salesrep` when it is set and is not the service
+  employee; otherwise the fallback employee. The rep comes from the customer already read, or
+  from a fresh `readCustomer` of the Task's company in its own try/catch (a failed read means no
+  rep, logged, and never replaces the original reason). If assigning to the rep throws (e.g. an
+  inactive employee), one retry goes to the fallback with ` (could not assign to sales rep <id>:
+  <message>)` added to the result; only if that also fails does D8 apply. The result text is
+  unchanged (`ERROR: …`), so reps now receive these Tasks for their own customers.
 - **Dates are compared as search strings.** The customer's `datecreated`, the Task's
   `createddate` and other Tasks' `createddate` are all read as search-formatted strings and
   parsed with `N/format`, so they share precision and timezone.
 - **A Task no longer in the queue when loaded** (reassigned or completed by a person since the
   search) is skipped, not touched.
 - **A customer whose sales rep is the service employee** fails to the fallback, rather than
-  being "reassigned" back into the queue.
+  being "reassigned" back into the queue. The same rule applies to every F (`failRecipient`).
 - **Task saves use `ignoreMandatoryFields: true`,** so a form-mandatory field the feed left blank
   cannot keep a Task in the queue.
 - **Misspelled field IDs in `project_ue.js` are real** (`custbody_opp_site_adress`,
@@ -316,9 +364,17 @@ These will look wrong to a fresh reader. Do not reverse them.
   scripted save leaves it blank, decide whether it matters.
 - **Reassigning a Task may email the new assignee** if the feed ticks the Task's notify option.
   Not suppressed; check in Sandbox.
-- **Only the literal `Plans: None` means no plans** (D3, amendment 1). Any other shape of plans
-  block goes to the fallback, so a feed-template change fails Tasks loudly rather than completing
-  them. The plans line is logged for every Task.
+- **Only the literal `Plans: None`, or no `Plans:` line at all, means no plans** (D3, amendment 1;
+  revised 15 Oct 2026). Any other shape of plans block fails (F), so a feed-template change
+  fails Tasks loudly rather than completing them, except that losing the `Plans:` line
+  altogether now reads as no plans. The plans line and `plans line missing` are logged for
+  every Task.
+- **A `Plans:` typed inside a trailing section** would become the last `Plans:` line and start
+  the block there. The Show form's `PROJECT PARTNER` fields are single labelled lines, so a
+  value cannot start a line with `Plans:`; if one ever did, its block would almost always fail
+  as `Plans line not understood`. Not guarded further.
+- **Failed Tasks may email the rep.** Reassigning a Task to the sales rep may notify them (see
+  above). Check in Sandbox.
 - **Queue page size 1,000.** Far above what one run's governance allows (~80 units per Task).
 
 ## 7. Audit log keys
@@ -327,7 +383,12 @@ These will look wrong to a fresh reader. Do not reverse them.
 |---|---|---|
 | `ENQ` | every line written by this project's scripts starts `ENQ ` | grep the scheduled script's execution log; each create and Task update logs its record IDs |
 | `ENQ config invalid` (ERROR) | a parameter is missing or invalid; no Task touched | fix the parameter named |
-| `ENQ task update failed` (ERROR) | D8: a Task write failed twice; it stays in the queue | read the error; the next run retries |
+| `ENQ task update failed` (ERROR) | D8: a Task write failed twice (rep then fallback, or fallback); it stays in the queue | read the error; the next run retries |
+| `ENQ ENQ_FAIL_TO_REP` | an F Task went to the customer's sales rep; Task, rep and reason | nothing; the rep acts on the `ERROR: …` result |
+| `ENQ ENQ_FAIL_TO_FALLBACK` | an F Task went to the fallback employee; Task, why (no company / no rep / rep is the service account / customer read failed / rep assignment failed) and reason | act on the Task; fix the customer's sales rep if that was why |
+| `ENQ task … could not be assigned to sales rep` (ERROR) | assigning to the rep threw; the Task is retried to the fallback | check the rep's employee record (inactive?) |
+| `ENQ task … customer read for the sales rep failed` (ERROR) | the customer could not be read to find the rep; the Task goes to the fallback | read the error |
+| `ENQ done` | end of run: counts per case, `failed (F)` (total), `failed to rep`, `failed to fallback`, skipped, Task updates failed | — |
 | `ENQ ENQ_URGENT_SET` | a new Project was created with `custrecord_proj_urgent` = true (stage "Ready for system now"); GF entry and Project ID | nothing; check the Opportunity has Urgent ticked if in doubt |
 | `ENQ ENQ_URGENT_SKIPPED_REUSE` | the Task's stage was urgent but its Project already existed (D4), so Urgent was not written | tick Urgent on the Opportunity by hand if it should be |
 | `PROJ_UE` | written by `customscript_project_ue` (not this repo) | read when a Task's result says no Opportunity was raised |

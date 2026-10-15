@@ -176,11 +176,13 @@ test('GF entry: inside the Message does not count', function () {
     assert.match(r.reason, /GF entry/);
 });
 
-test('missing Plans: line is unparseable', function () {
+test('missing Plans: line means no plans (D3 revised, 15 Oct 2026)', function () {
     var text = QUOTE.split('\n').slice(0, 8).join('\n');
     var r = parse.parseNotes(text);
-    assert.strictEqual(r.ok, false);
-    assert.match(r.reason, /Plans/);
+    assert.strictEqual(r.ok, true);
+    assert.strictEqual(r.hasPlans, false);
+    assert.strictEqual(r.plansLineMissing, true);
+    assert.strictEqual(r.message, 'Hello, please quote for the ground floor.\nThanks, Jane');
 });
 
 test('URL on the Plans: line itself', function () {
@@ -294,4 +296,143 @@ test('Notes with Project stage: Ready for system now | parse as urgent', functio
     assert.strictEqual(r.ok, true);
     assert.deepStrictEqual(r.projectStage, ['Ready for system now']);
     assert.strictEqual(parse.isUrgentStage(r.projectStage), true);
+});
+
+// Show form: sections, and a PROJECT PARTNER section after Plans: (15 Oct 2026).
+
+var SHOW_FORM = [
+    'GF entry: 320875',
+    'Form: Marketing - Show form',
+    '',
+    'CUSTOMER INFORMATION',
+    'First name: Richard',
+    'Last name: Whitlock',
+    'Email: richard@example.co.uk',
+    'Phone: 07800000000',
+    'I am the: Self-builder',
+    'Project postcode: Sg192ez',
+    'I spoke to: George',
+    '',
+    'PROJECT DETAILS',
+    'Project type: New build',
+    'Project stage: Planning approval',
+    'Insulation details: New build',
+    'Age of property:',
+    'Heat source:',
+    'Other heat source:',
+    'Floor construction - Basement:',
+    'Floor construction - Ground:',
+    'Floor construction - First:',
+    'Floor construction - Second:',
+    'Other technologies:',
+    'Project details: Need to email for plans',
+    'Sc14 gf and eufh bathrooms',
+    'Check on hp?',
+    'Plans: None',
+    '',
+    'PROJECT PARTNER',
+    'Company name:',
+    'Contact name:',
+    'Phone:',
+    'Email:',
+    'Website:',
+    'Partner type:',
+    ''
+].join('\n');
+
+test('Show form: PROJECT PARTNER after Plans: None ends the plans block', function () {
+    var r = parse.parseNotes(SHOW_FORM);
+    assert.strictEqual(r.ok, true);
+    assert.strictEqual(r.hasPlans, false);
+    assert.deepStrictEqual(r.planUrls, []);
+    assert.strictEqual(r.trailingSection, 'PROJECT PARTNER');
+    assert.strictEqual(r.plansLineMissing, false);
+    assert.strictEqual(r.gfEntry, '320875');
+    assert.strictEqual(r.form, 'Marketing - Show form');
+    assert.deepStrictEqual(r.projectStage, ['Planning approval']);
+});
+
+test('Show form with two plan URLs before PROJECT PARTNER', function () {
+    var text = SHOW_FORM.replace('Plans: None\n', 'Plans:\n1. https://example.com/a.pdf\n2. https://example.com/b.pdf\n');
+    var r = parse.parseNotes(text);
+    assert.strictEqual(r.ok, true);
+    assert.strictEqual(r.hasPlans, true);
+    assert.deepStrictEqual(r.planUrls, ['https://example.com/a.pdf', 'https://example.com/b.pdf']);
+    assert.strictEqual(r.trailingSection, 'PROJECT PARTNER');
+});
+
+test('a bad line before the heading still fails', function () {
+    var r = parse.parseNotes('GF entry: 9\nPlans: None\nsome text\nPROJECT PARTNER\nCompany name:');
+    assert.strictEqual(r.ok, false);
+    assert.strictEqual(r.reason, 'Plans line not understood: some text');
+});
+
+test('lower-case Project partner under Plans is not a heading, so it fails', function () {
+    var r = parse.parseNotes('GF entry: 9\nPlans: None\n\nProject partner\nCompany name:');
+    assert.strictEqual(r.ok, false);
+    assert.strictEqual(r.reason, 'Plans line not understood: Project partner');
+    assert.strictEqual(r.trailingSection, '');
+});
+
+// Lead-magnet forms: no Plans: line at all (15 Oct 2026).
+
+test('lead magnet: no Plans: line means no plans, full Message kept', function () {
+    var text = [
+        'GF entry: 321579',
+        'Form: Marketing - Lead magnet - Self-build/Trade - Ultimate UFH Guide',
+        'Email: someone@example.com',
+        'Phone: 07500000000',
+        'Message: Advice on underfloor heating as plan to install in ground floor, current floor ' +
+            'has wooden joints and concerned about heat retention and efficiency',
+        ''
+    ].join('\n');
+    var r = parse.parseNotes(text);
+    assert.strictEqual(r.ok, true);
+    assert.strictEqual(r.hasPlans, false);
+    assert.deepStrictEqual(r.planUrls, []);
+    assert.strictEqual(r.plansLine, '');
+    assert.strictEqual(r.plansLineMissing, true);
+    assert.strictEqual(r.gfEntry, '321579');
+    assert.strictEqual(r.form, 'Marketing - Lead magnet - Self-build/Trade - Ultimate UFH Guide');
+    assert.strictEqual(r.email, 'someone@example.com');
+    assert.strictEqual(r.message,
+        'Advice on underfloor heating as plan to install in ground floor, current floor ' +
+        'has wooden joints and concerned about heat retention and efficiency');
+});
+
+test('no GF entry: and no Plans: still fails on the GF entry', function () {
+    var r = parse.parseNotes('Form: Marketing - Lead magnet\nEmail: a@b.com\nMessage: hi');
+    assert.strictEqual(r.ok, false);
+    assert.match(r.reason, /GF entry/);
+});
+
+test('Get a quote fixtures: no trailing section, Plans: line present', function () {
+    [QUOTE, CONTACT].forEach(function (text) {
+        var r = parse.parseNotes(text);
+        assert.strictEqual(r.ok, true);
+        assert.strictEqual(r.trailingSection, '');
+        assert.strictEqual(r.plansLineMissing, false);
+    });
+});
+
+// failRecipient: failed Tasks go to the customer's sales rep (15 Oct 2026).
+
+test('failRecipient: a rep gets the Task', function () {
+    assert.deepStrictEqual(parse.failRecipient('17', '5', '9'), { employeeId: '17', toRep: true });
+});
+
+test('failRecipient: no rep goes to the fallback', function () {
+    ['', null, undefined].forEach(function (rep) {
+        assert.deepStrictEqual(parse.failRecipient(rep, '5', '9'), { employeeId: '9', toRep: false });
+    });
+});
+
+test('failRecipient: rep equal to the service employee goes to the fallback', function () {
+    assert.deepStrictEqual(parse.failRecipient('5', '5', '9'), { employeeId: '9', toRep: false });
+});
+
+test('failRecipient: numeric and string IDs compare equal', function () {
+    assert.deepStrictEqual(parse.failRecipient(5, '5', 9), { employeeId: '9', toRep: false });
+    assert.deepStrictEqual(parse.failRecipient('5', 5, '9'), { employeeId: '9', toRep: false });
+    assert.deepStrictEqual(parse.failRecipient(17, '5', '9'), { employeeId: '17', toRep: true });
 });

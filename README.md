@@ -23,7 +23,7 @@ project.** Read it before changing anything.
 src/FileCabinet/SuiteScripts/NuHeat/Enquiry Capture/   the scheduled script and its lib/ modules (File Cabinet path is identical)
 reference/                                            read-only copies of scripts owned elsewhere — never edit
 docs/                                                 context document and phase notes
-test/                                                 node tests for the pure parsing module
+test/                                                 node tests: the pure parse module, and createProjectForEntity with N/* stubbed
 ```
 
 ## Rules
@@ -34,4 +34,6 @@ test/                                                 node tests for the pure pa
   `customrecord_*`) may be; everything account-specific comes in through script
   parameters.
 - `reference/` is read-only. See [`reference/README.md`](reference/README.md).
-- `npm test` runs the node tests for the pure parsing module (no dependencies).
+- `npm test` runs the node tests (no dependencies): `test/parse.test.js` for the pure parse
+  module, `test/project.test.js` for `createProjectForEntity` with `N/record` and `N/search`
+  stubbed. The processor and `enq_lib_task.js` have no tests.
