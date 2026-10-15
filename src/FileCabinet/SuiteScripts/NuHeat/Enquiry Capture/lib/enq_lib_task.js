@@ -1,7 +1,7 @@
 /**
  * @NApiVersion 2.1
  * @NModuleScope SameAccount
- * @version 1.0.0
+ * @version 1.1.0
  */
 
 /**
@@ -26,7 +26,7 @@ function (record, search, config, parse) {
 
     'use strict';
 
-    var VERSION = '1.0.0';
+    var VERSION = '1.1.0';
 
     var STATUS_COMPLETE = 'COMPLETE';
 
@@ -192,8 +192,13 @@ function (record, search, config, parse) {
         config.audit('task reassigned ' + id, 'to employee ' + employeeId + ', result: ' + result);
     }
 
-    function fail(id, cfg, result) {
-        reassign(id, cfg.fallbackEmployeeId, 'ERROR: ' + result);
+    /**
+     * Send a failed Task to employeeId (the customer's sales rep, chosen by the
+     * processor) or, when it is not given, to the fallback employee. Throws when
+     * the save fails; the processor decides what to do next.
+     */
+    function fail(id, cfg, result, employeeId) {
+        reassign(id, employeeId || cfg.fallbackEmployeeId, 'ERROR: ' + result);
     }
 
     return {

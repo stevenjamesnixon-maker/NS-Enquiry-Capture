@@ -5,7 +5,8 @@ message says what to do). The canonical description of the result is
 [`docs/context.md`](context.md); this file covers what was built, where the brief turned out
 wrong, and what is still to check in Sandbox.
 
-**Not merged, not deployed.** Steve tests in Sandbox, merges and deploys.
+**Merged and deployed to Production** (v1.0.0, with `enq_lib_project.js` 1.0.1). Later
+changes are recorded in [`docs/context.md`](context.md).
 
 ## What was built
 

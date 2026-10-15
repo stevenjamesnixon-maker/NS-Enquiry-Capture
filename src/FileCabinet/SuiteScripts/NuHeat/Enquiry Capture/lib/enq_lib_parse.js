@@ -1,7 +1,7 @@
 /**
  * @NApiVersion 2.1
  * @NModuleScope SameAccount
- * @version 1.1.0
+ * @version 1.2.0
  */
 
 /**
@@ -23,26 +23,36 @@
  *     1. https://...
  *     2. https://...
  *
- * or the single line "Plans: None".
+ * or the single line "Plans: None". Other feeds use the same labels in other
+ * layouts (docs/context.md, "Feed layouts"): the Show form puts its fields in
+ * upper-case sections and ends with a PROJECT PARTNER section after Plans:; the
+ * lead-magnet forms have no Plans: line at all.
  *
  * DELIBERATE (D3): only an unambiguous plans block counts. After the LAST
- * "Plans:" line:
+ * "Plans:" line, up to the first section heading (see isSectionHeading):
  *   - exactly "None" (any case) and nothing under it: no plans;
  *   - a URL on the Plans: line and/or numbered URL lines, and nothing else: plans;
  *   - "Plans: None" with URLs under it: unparseable;
  *   - anything else ("Plans:" with nothing after it, "Plans: see attached", a
  *     numbered line without a URL, any other line under the block): unparseable,
  *     reason "Plans line not understood: <line>".
- * A missing "GF entry:" or "Plans:" line is also unparseable. Unparseable goes to
- * a person; it is never completed. A change to the feed template must never
- * silently complete Tasks.
+ * The heading and everything after it is recorded as trailingSection and not
+ * parsed (15 Oct 2026).
+ *
+ * DELIBERATE (D3 revised, 15 Oct 2026, Steve): NO "Plans:" line at all means no
+ * plans (plansLineMissing: true), so lead-magnet forms are routed like
+ * "Plans: None". Trade-off: if the quote feed ever lost its Plans: line, Tasks
+ * with plans would be treated as having none; plansLineMissing is logged.
+ *
+ * A missing "GF entry:" line is still unparseable. Unparseable goes to a person;
+ * it is never completed.
  */
 
 define([], function () {
 
     'use strict';
 
-    var VERSION = '1.1.0';
+    var VERSION = '1.2.0';
 
     var WEBSITE_TITLE_PREFIX = 'Website form submission';
 
@@ -62,6 +72,9 @@ define([], function () {
     // A URL on the Plans: line itself, with or without a "1." in front of it.
     var RE_PLAN_INLINE = /^(?:\d+\.\s*)?(https?:\/\/\S+)$/i;
     var RE_NONE       = /^none$/i;
+    // A section heading: upper-case letters, spaces, &, / and - only. No ':'.
+    var RE_HEADING    = /^[A-Z &\/-]+$/;
+    var MIN_HEADING_LETTERS = 3;
 
     /**
      * Line endings to \n, HTML to text when the notes arrive as HTML, every line
@@ -112,7 +125,11 @@ define([], function () {
      * @returns {{ok: boolean, reason: string, gfEntry: string, form: string,
      *            email: string, phone: string, projectStage: string[],
      *            message: string, plansLine: string, hasPlans: boolean,
-     *            planUrls: string[]}}
+     *            planUrls: string[], plansLineMissing: boolean,
+     *            trailingSection: string}}
+     *          plansLineMissing: no Plans: line at all (no plans; D3 revised).
+     *          trailingSection: the section heading that ended the plans block,
+     *          or ''. The section's contents are not parsed.
      */
     function parseNotes(text) {
 
@@ -127,7 +144,9 @@ define([], function () {
             message:      '',
             plansLine:    '',
             hasPlans:     false,
-            planUrls:     []
+            planUrls:     [],
+            plansLineMissing: false,
+            trailingSection:  ''
         };
 
         var lines = normalise(text).split('\n');
@@ -146,10 +165,12 @@ define([], function () {
                 messageIdx = i;
             }
         }
-        if (messageIdx > plansIdx) {
+        if (plansIdx >= 0 && messageIdx > plansIdx) {
             // A Message: line after the plans block is not the template's.
             messageIdx = -1;
         }
+        // With no Plans: line, the Message runs to the end of the Notes.
+        var messageEnd = plansIdx >= 0 ? plansIdx : lines.length;
 
         // Header fields: first occurrence above the Message (or the plans block),
         // so nothing typed into the Message can override them.
@@ -170,7 +191,7 @@ define([], function () {
 
         if (messageIdx >= 0) {
             var msg = [RE_MESSAGE.exec(lines[messageIdx])[1]];
-            for (i = messageIdx + 1; i < plansIdx; i++) {
+            for (i = messageIdx + 1; i < messageEnd; i++) {
                 msg.push(lines[i]);
             }
             result.message = msg.join('\n').trim();
@@ -181,19 +202,26 @@ define([], function () {
             return result;
         }
         if (plansIdx < 0) {
-            result.reason = 'Notes have no Plans: line';
+            // D3 revised (15 Oct 2026): no Plans: line means no plans.
+            result.plansLineMissing = true;
+            result.ok = true;
             return result;
         }
 
         var inline = RE_PLANS.exec(lines[plansIdx])[1].trim();
         result.plansLine = lines[plansIdx];
 
-        // Every non-empty line under the block must be a numbered plan URL. The
-        // first that isn't is reported.
+        // Every non-empty line under the block, up to the first section heading,
+        // must be a numbered plan URL. The first that isn't is reported. The
+        // heading and everything after it is neither.
         var badLine = '';
         for (i = plansIdx + 1; i < lines.length; i++) {
             if (!lines[i]) {
                 continue;
+            }
+            if (isSectionHeading(lines[i])) {
+                result.trailingSection = lines[i];
+                break;
             }
             if ((m = RE_PLAN_LINE.exec(lines[i]))) {
                 result.planUrls.push(m[1]);
@@ -241,6 +269,19 @@ define([], function () {
         result.hasPlans = false;
         result.reason = 'Plans line not understood: ' + line;
         return result;
+    }
+
+    /**
+     * A section heading, e.g. "PROJECT PARTNER": non-empty, no ':', only
+     * upper-case A-Z, spaces, '&', '/' and '-', and at least 3 letters.
+     */
+    function isSectionHeading(line) {
+        var s = String(line || '').trim();
+        if (!s || !RE_HEADING.test(s)) {
+            return false;
+        }
+        var letters = s.match(/[A-Z]/g);
+        return !!letters && letters.length >= MIN_HEADING_LETTERS;
     }
 
     function splitStage(raw) {
@@ -307,6 +348,29 @@ define([], function () {
     function normaliseLabel(v) {
         var s = (v === null || v === undefined) ? '' : String(v);
         return s.trim().toLowerCase().replace(/\s+/g, ' ');
+    }
+
+    /**
+     * Who gets a failed Task: the customer's sales rep when there is a usable
+     * one, else the fallback employee. A rep equal to the service employee is
+     * not usable (the Task would go straight back into the queue). IDs are
+     * compared as strings.
+     *
+     * @param {string|number|null|undefined} salesRepId
+     * @param {string|number} serviceEmployeeId
+     * @param {string|number} fallbackEmployeeId
+     * @returns {{employeeId: string, toRep: boolean}}
+     */
+    function failRecipient(salesRepId, serviceEmployeeId, fallbackEmployeeId) {
+        var rep = idString(salesRepId);
+        if (rep && rep !== idString(serviceEmployeeId)) {
+            return { employeeId: rep, toRep: true };
+        }
+        return { employeeId: idString(fallbackEmployeeId), toRep: false };
+    }
+
+    function idString(v) {
+        return (v === null || v === undefined) ? '' : String(v).trim();
     }
 
     function isWebsiteTitle(title) {
@@ -378,6 +442,8 @@ define([], function () {
         flattenAddress:       flattenAddress,
         isWebsiteTitle:       isWebsiteTitle,
         isUrgentStage:        isUrgentStage,
+        isSectionHeading:     isSectionHeading,
+        failRecipient:        failRecipient,
         createdWithinWindow:  createdWithinWindow,
         isEarlierTask:        isEarlierTask
     };
